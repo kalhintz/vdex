@@ -2,7 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 from curl_cffi import requests
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from eth_account import Account
 from eth_account.messages import encode_defunct
 import secrets
@@ -20,11 +20,10 @@ class VDEXTrader:
         self.refresh_token = None
         self.last_message = None
         self.last_chain_id = None
-        self.current_positions = []  # 현재 포지션 저장
-        self.auto_trading = False  # 자동 거래 상태
-        self.auto_thread = None  # 자동 거래 스레드
+        self.current_positions = []
+        self.auto_trading = False
+        self.auto_thread = None
 
-        # API 엔드포인트
         self.base_url = "https://api.vdex.trade"
         self.login_url = f"{self.base_url}/auth-service/api/v2/auth/login"
         self.balance_url = f"{self.base_url}/api-gateway/v1/user/balance"
@@ -36,11 +35,9 @@ class VDEXTrader:
         self.setup_ui()
 
     def setup_ui(self):
-        # 메인 프레임
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
 
-        # 로그인 섹션
         login_frame = ttk.LabelFrame(main_frame, text="로그인", padding="10")
         login_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
 
@@ -63,11 +60,9 @@ class VDEXTrader:
 
         ttk.Button(button_frame, text="로그인", command=self.login, width=20).pack()
 
-        # 상태 표시
         self.status_label = ttk.Label(login_frame, text="로그인 필요", foreground="red")
         self.status_label.grid(row=5, column=0, columnspan=2)
 
-        # 잔고 섹션
         balance_frame = ttk.LabelFrame(main_frame, text="잔고", padding="10")
         balance_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5, padx=(0, 5))
 
@@ -76,7 +71,6 @@ class VDEXTrader:
 
         ttk.Button(balance_frame, text="잔고 새로고침", command=self.get_balance).pack(pady=5)
 
-        # 포지션 섹션
         position_frame = ttk.LabelFrame(main_frame, text="포지션", padding="10")
         position_frame.grid(row=1, column=1, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
 
@@ -89,11 +83,9 @@ class VDEXTrader:
         ttk.Button(position_button_frame, text="포지션 새로고침", command=self.get_positions).pack(side=tk.LEFT, padx=2)
         ttk.Button(position_button_frame, text="모든 포지션 청산", command=self.liquidate_all_positions).pack(side=tk.LEFT, padx=2)
 
-        # 주문 섹션
         order_frame = ttk.LabelFrame(main_frame, text="주문", padding="10")
         order_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
 
-        # 주문 입력 필드
         order_input_frame = ttk.Frame(order_frame)
         order_input_frame.pack(fill=tk.X, pady=5)
 
@@ -117,7 +109,6 @@ class VDEXTrader:
         self.leverage_entry.grid(row=0, column=8, padx=5)
         self.leverage_entry.insert(0, "1")
 
-        # 가격 및 주문 버튼
         order_button_frame = ttk.Frame(order_frame)
         order_button_frame.pack(fill=tk.X, pady=5)
 
@@ -128,15 +119,12 @@ class VDEXTrader:
         ttk.Button(order_button_frame, text="마켓 주문", command=self.place_market_order).pack(side=tk.LEFT, padx=5)
         ttk.Button(order_button_frame, text="오픈 오더 조회", command=self.get_open_orders).pack(side=tk.LEFT, padx=5)
 
-        # 오픈 오더 표시
         self.orders_text = scrolledtext.ScrolledText(order_frame, width=80, height=6, wrap=tk.WORD)
         self.orders_text.pack(fill=tk.BOTH, expand=True, pady=5)
 
-        # 자동 거래 섹션
         auto_frame = ttk.LabelFrame(main_frame, text="자동 반복 거래", padding="10")
         auto_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
 
-        # 자동 거래 설정
         auto_settings_frame = ttk.Frame(auto_frame)
         auto_settings_frame.pack(fill=tk.X, pady=5)
 
@@ -170,7 +158,6 @@ class VDEXTrader:
         self.auto_leverage_entry.grid(row=1, column=6, padx=5)
         self.auto_leverage_entry.insert(0, "1")
 
-        # 자동 거래 버튼 및 상태
         auto_control_frame = ttk.Frame(auto_frame)
         auto_control_frame.pack(fill=tk.X, pady=5)
 
@@ -180,21 +167,20 @@ class VDEXTrader:
         self.stop_auto_btn = ttk.Button(auto_control_frame, text="자동 거래 중지", command=self.stop_auto_trading, state=tk.DISABLED)
         self.stop_auto_btn.pack(side=tk.LEFT, padx=5)
 
+        ttk.Button(auto_control_frame, text="즉시 청산", command=self.quick_liquidate).pack(side=tk.LEFT, padx=5)
+
         self.auto_status_label = ttk.Label(auto_control_frame, text="대기 중", foreground="gray")
         self.auto_status_label.pack(side=tk.LEFT, padx=10)
 
-        # 자동 거래 로그
         self.auto_log_text = scrolledtext.ScrolledText(auto_frame, width=80, height=5, wrap=tk.WORD)
         self.auto_log_text.pack(fill=tk.BOTH, expand=True, pady=5)
 
-        # 로그 섹션
         log_frame = ttk.LabelFrame(main_frame, text="로그", padding="10")
         log_frame.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
 
         self.log_text = scrolledtext.ScrolledText(log_frame, width=80, height=6, wrap=tk.WORD)
         self.log_text.pack(fill=tk.BOTH, expand=True)
 
-        # Grid 설정
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(0, weight=1)
@@ -214,7 +200,7 @@ class VDEXTrader:
         timestamp = datetime.now().strftime("%H:%M:%S")
         self.auto_log_text.insert(tk.END, f"[{timestamp}] {message}\n")
         self.auto_log_text.see(tk.END)
-        self.log(message)  # 메인 로그에도 기록
+        self.log(message)
 
     def get_nonce_and_sign(self):
         address = self.address_entry.get().strip()
@@ -228,14 +214,18 @@ class VDEXTrader:
             messagebox.showwarning("안내", "개인키가 없습니다. 메시지를 생성합니다.\n직접 MetaMask에서 서명해서 입력하세요.")
 
         try:
-            # Nonce 랜덤 생성 (17자 영숫자)
             nonce = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(17))
-            issued_at = datetime.utcnow().isoformat(timespec='milliseconds') + 'Z'
-
-            # Chain ID 56 (BSC)
+            issued_at = datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
             chain_id = 56
 
-            # 메시지 생성
+            if privkey:
+                if not privkey.startswith('0x'):
+                    privkey = '0x' + privkey
+                account = Account.from_key(privkey)
+                address = account.address
+                self.address_entry.delete(0, tk.END)
+                self.address_entry.insert(0, address)
+
             message = f"""app.vdex.trade wants you to sign in with your Ethereum account:
 {address}
 
@@ -247,28 +237,14 @@ Chain ID: {chain_id}
 Nonce: {nonce}
 Issued At: {issued_at}"""
 
-            # 저장
             self.last_message = message
             self.last_chain_id = chain_id
 
             self.log(f"Nonce 생성: {nonce}")
             self.log(f"생성된 메시지:\n{message}")
 
-            # 개인키가 있으면 서명 생성
             if privkey:
                 try:
-                    # 개인키 앞에 0x 없으면 추가
-                    if not privkey.startswith('0x'):
-                        privkey = '0x' + privkey
-
-                    account = Account.from_key(privkey)
-
-                    # 주소 확인
-                    if account.address.lower() != address.lower():
-                        messagebox.showerror("오류", "개인키와 주소가 일치하지 않습니다!")
-                        return
-
-                    # 메시지 서명
                     message_hash = encode_defunct(text=message)
                     signed = account.sign_message(message_hash)
                     signature = signed.signature.hex()
@@ -280,7 +256,7 @@ Issued At: {issued_at}"""
                     self.signature_entry.insert(0, signature)
 
                     self.log("서명 생성 완료!")
-                    messagebox.showinfo("성공", "서명이 생성되었습니다!\n이제 '서명으로 로그인' 버튼을 클릭하세요.")
+                    messagebox.showinfo("성공", "서명이 생성되었습니다!\n이제 '로그인' 버튼을 클릭하세요.")
                 except Exception as e:
                     messagebox.showerror("서명 오류", f"서명 생성 실패: {str(e)}")
                     self.log(f"서명 오류: {str(e)}")
@@ -300,13 +276,11 @@ Issued At: {issued_at}"""
             messagebox.showerror("오류", "지갑 주소와 서명을 입력해주세요.")
             return
 
-        # 저장된 메시지가 있으면 사용
         if self.last_message and self.last_chain_id:
             message = self.last_message
             chain_id = self.last_chain_id
             self.log("저장된 메시지와 Chain ID 사용")
         else:
-            # 없으면 기본값 (하지만 실패할 가능성 높음)
             messagebox.showwarning("경고", "먼저 'Nonce 생성 & 서명' 버튼을 눌러주세요!")
             return
 
@@ -322,19 +296,15 @@ Issued At: {issued_at}"""
             "accept": "application/json",
             "accept-language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
             "content-type": "application/json",
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "origin": "https://app.vdex.trade",
-            "referer": "https://app.vdex.trade/",
-            "sec-fetch-dest": "empty",
-            "sec-fetch-mode": "cors",
-            "sec-fetch-site": "same-site"
+            "referer": "https://app.vdex.trade/"
         }
 
         try:
             self.log("로그인 시도 중...")
             response = requests.post(self.login_url, json=payload, headers=headers, impersonate="chrome120")
 
-            # 응답 디버깅
             self.log(f"응답 상태 코드: {response.status_code}")
             self.log(f"응답 내용: {response.text[:500]}")
 
@@ -346,7 +316,6 @@ Issued At: {issued_at}"""
                 self.status_label.config(text="로그인 성공!", foreground="green")
                 self.log("로그인 성공!")
 
-                # 자동으로 잔고, 포지션, 오픈 오더 가져오기
                 self.get_balance()
                 self.get_positions()
                 self.get_open_orders()
@@ -366,24 +335,16 @@ Issued At: {issued_at}"""
             "accept": "application/json",
             "accept-language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
             "authorization": f"Bearer {self.access_token}",
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "origin": "https://app.vdex.trade",
-            "referer": "https://app.vdex.trade/",
-            "sec-fetch-dest": "empty",
-            "sec-fetch-mode": "cors",
-            "sec-fetch-site": "same-site"
+            "referer": "https://app.vdex.trade/"
         }
 
         try:
             self.log("잔고 조회 중...")
             response = requests.get(self.balance_url, headers=headers, impersonate="chrome120")
 
-            # 응답 디버깅
-            self.log(f"응답 상태 코드: {response.status_code}")
-            self.log(f"응답 내용: {response.text[:500]}")
-
             data = response.json()
-
             self.balance_text.delete(1.0, tk.END)
 
             if data.get("code") == 0:
@@ -424,30 +385,21 @@ Issued At: {issued_at}"""
             "accept": "application/json",
             "accept-language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
             "authorization": f"Bearer {self.access_token}",
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "origin": "https://app.vdex.trade",
-            "referer": "https://app.vdex.trade/",
-            "sec-fetch-dest": "empty",
-            "sec-fetch-mode": "cors",
-            "sec-fetch-site": "same-site"
+            "referer": "https://app.vdex.trade/"
         }
 
         try:
             self.log("포지션 조회 중...")
             response = requests.get(self.positions_url, headers=headers, impersonate="chrome120")
 
-            # 응답 디버깅
-            self.log(f"응답 상태 코드: {response.status_code}")
-            self.log(f"응답 내용: {response.text[:500]}")
-
             data = response.json()
-
             self.position_text.delete(1.0, tk.END)
 
             if data.get("code") == 0:
                 positions = data.get("data")
 
-                # 포지션 데이터 저장
                 if positions and isinstance(positions, list):
                     self.current_positions = positions
                 else:
@@ -465,7 +417,6 @@ Issued At: {issued_at}"""
                             direction = "롱(매수)" if direction_code == "buy" else "숏(매도)"
                             entry_price = pos.get("entry_price", 0)
                             mark_price = pos.get("mark_price", 0)
-                            # unrealized_pnl 계산
                             if direction_code == "buy":
                                 unrealized_pnl = (mark_price - entry_price) * amount
                             else:
@@ -509,7 +460,6 @@ Issued At: {issued_at}"""
 
         headers = {
             "accept": "application/json",
-            "accept-language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
             "authorization": f"Bearer {self.access_token}",
             "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "origin": "https://app.vdex.trade",
@@ -551,7 +501,6 @@ Issued At: {issued_at}"""
             messagebox.showerror("오류", "올바른 값을 입력해주세요.")
             return
 
-        # 주문 확인
         confirm = messagebox.askyesno(
             "주문 확인",
             f"{symbol} {direction.upper()} 마켓 주문\n"
@@ -565,7 +514,6 @@ Issued At: {issued_at}"""
 
         headers = {
             "accept": "application/json",
-            "accept-language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
             "authorization": f"Bearer {self.access_token}",
             "content-type": "application/json",
             "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -575,11 +523,11 @@ Issued At: {issued_at}"""
 
         payload = {
             "direction": direction,
-            "price": -1,  # 마켓 주문
+            "price": -1,
             "quantity": quantity_usd,
             "leverage_type": "cross",
             "base_asset_id": symbol,
-            "initial_margin": quantity_usd * 0.9999,  # 약간 적게
+            "initial_margin": quantity_usd * 0.9999,
             "leverage": leverage,
             "initial_margin_asset_id": "USD",
             "order_type": "MarketOpen",
@@ -591,18 +539,15 @@ Issued At: {issued_at}"""
             self.log(f"주문 실행 중: {symbol} {direction} ${quantity_usd}")
             response = requests.post(self.order_url, json=payload, headers=headers, impersonate="chrome120")
 
-            self.log(f"응답 상태: {response.status_code}")
             data = response.json()
 
             if data.get("code") == 0:
                 order_data = data["data"]
                 order_id = order_data.get("id", "unknown")
-                status = order_data.get("status", "unknown")
 
-                self.log(f"주문 성공! ID: {order_id}, 상태: {status}")
+                self.log(f"주문 성공! ID: {order_id}")
                 messagebox.showinfo("성공", f"주문이 접수되었습니다!\n주문 ID: {order_id}")
 
-                # 잔고와 포지션 새로고침
                 self.get_balance()
                 self.get_positions()
                 self.get_open_orders()
@@ -621,7 +566,6 @@ Issued At: {issued_at}"""
 
         headers = {
             "accept": "application/json",
-            "accept-language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
             "authorization": f"Bearer {self.access_token}",
             "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "origin": "https://app.vdex.trade",
@@ -634,7 +578,6 @@ Issued At: {issued_at}"""
             response = requests.get(url, headers=headers, impersonate="chrome120")
 
             data = response.json()
-
             self.orders_text.delete(1.0, tk.END)
 
             if data.get("code") == 0:
@@ -650,11 +593,9 @@ Issued At: {issued_at}"""
                         direction = order.get("direction", "")
                         quantity = order.get("quantity", 0)
                         price = order.get("price", 0)
-                        status = order.get("status", "")
-                        order_type = order.get("order_type", "")
 
                         self.orders_text.insert(tk.END, f"ID: {order_id}...\n")
-                        self.orders_text.insert(tk.END, f"{symbol} {direction.upper()} | 수량: {quantity} | 가격: {price} | 상태: {status} | 타입: {order_type}\n")
+                        self.orders_text.insert(tk.END, f"{symbol} {direction.upper()} | 수량: {quantity} | 가격: {price}\n")
                         self.orders_text.insert(tk.END, f"{'-'*80}\n")
 
                     self.log(f"오픈 오더 {len(orders)}개 조회 완료")
@@ -677,7 +618,6 @@ Issued At: {issued_at}"""
             messagebox.showinfo("안내", "청산할 포지션이 없습니다.\n먼저 '포지션 새로고침'을 클릭하세요.")
             return
 
-        # 청산 확인
         confirm = messagebox.askyesno(
             "포지션 청산 확인",
             f"총 {len(self.current_positions)}개의 포지션을 청산하시겠습니까?\n\n"
@@ -689,7 +629,6 @@ Issued At: {issued_at}"""
 
         headers = {
             "accept": "application/json",
-            "accept-language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
             "authorization": f"Bearer {self.access_token}",
             "content-type": "application/json",
             "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -700,29 +639,21 @@ Issued At: {issued_at}"""
         success_count = 0
         fail_count = 0
 
-        self.log(f"청산할 포지션 개수: {len(self.current_positions)}")
-
-        for i, position in enumerate(self.current_positions):
-            self.log(f"포지션 #{i+1} 데이터: {position}")
+        for position in self.current_positions:
             try:
                 position_id = position.get("position_id")
-                leverage_id = position.get("leverage_id")  # user_id가 아님!
+                leverage_id = position.get("leverage_id")
                 token_id = position.get("token_id", "")
-                amount = position.get("amount", 0)  # position_size가 아님!
-                direction = position.get("direction", "")
+                amount = position.get("amount", 0)
 
-                # base_asset_id 찾기
                 if token_id:
                     base_asset_id = token_id
                 else:
-                    # token_id가 없으면 다른 필드에서 찾기
                     base_asset_id = position.get("base_asset_id", "ETH")
 
                 if not position_id or amount == 0:
-                    self.log(f"건너뛰기: 포지션 ID 없음 또는 수량 0")
                     continue
 
-                # 현재가 조회
                 try:
                     price_url = f"{self.price_url}/{base_asset_id}/USDT"
                     price_response = requests.get(price_url, headers=headers, impersonate="chrome120")
@@ -740,14 +671,8 @@ Issued At: {issued_at}"""
                     "order_type": "MarketClose"
                 }
 
-                self.log(f"청산 중: {base_asset_id} {direction} 포지션 {abs(amount):.6f} (ID: {position_id[:20]}...)")
-                self.log(f"페이로드: {payload}")
-
                 response = requests.post(self.liquidate_url, json=payload, headers=headers, impersonate="chrome120")
                 data = response.json()
-
-                self.log(f"응답 상태: {response.status_code}")
-                self.log(f"응답 내용: {data}")
 
                 if data.get("code") == 0:
                     success_count += 1
@@ -760,18 +685,41 @@ Issued At: {issued_at}"""
                 fail_count += 1
                 self.log(f"✗ 포지션 청산 오류: {str(e)}")
 
-        # 결과 표시
         result_msg = f"청산 완료!\n\n성공: {success_count}개\n실패: {fail_count}개"
         if success_count > 0:
             messagebox.showinfo("청산 완료", result_msg)
         else:
             messagebox.showwarning("청산 실패", result_msg)
 
-        # 잔고와 포지션 새로고침
         if success_count > 0:
             self.get_balance()
             self.get_positions()
             self.get_open_orders()
+
+    def quick_liquidate(self):
+        """자동 거래 중 즉시 청산"""
+        if not self.access_token:
+            messagebox.showwarning("경고", "먼저 로그인해주세요.")
+            return
+
+        confirm = messagebox.askyesno(
+            "즉시 청산 확인",
+            "모든 포지션을 즉시 청산하시겠습니까?\n\n"
+            "⚠️ 자동 거래가 진행 중이어도 청산됩니다!"
+        )
+
+        if not confirm:
+            return
+
+        self.auto_log("⚡ 즉시 청산 시작...")
+        success = self.liquidate_auto()
+
+        if success:
+            self.auto_log("✓ 즉시 청산 완료!")
+            messagebox.showinfo("완료", "포지션이 청산되었습니다.")
+        else:
+            self.auto_log("✗ 즉시 청산 실패")
+            messagebox.showwarning("실패", "청산할 포지션이 없거나 실패했습니다.")
 
     def start_auto_trading(self):
         if not self.access_token:
@@ -794,7 +742,6 @@ Issued At: {issued_at}"""
             messagebox.showerror("오류", "올바른 값을 입력해주세요.")
             return
 
-        # 확인
         confirm = messagebox.askyesno(
             "자동 거래 시작 확인",
             f"다음 설정으로 자동 거래를 시작하시겠습니까?\n\n"
@@ -814,7 +761,6 @@ Issued At: {issued_at}"""
         self.start_auto_btn.config(state=tk.DISABLED)
         self.stop_auto_btn.config(state=tk.NORMAL)
 
-        # 별도 스레드에서 자동 거래 실행
         self.auto_thread = threading.Thread(
             target=self.auto_trading_loop,
             args=(repeat_count, wait_time, symbol, direction, quantity_usd, leverage),
@@ -850,6 +796,33 @@ Issued At: {issued_at}"""
                     continue
 
                 self.auto_log("✓ 주문 성공!")
+
+                # 1-2. 포지션 생성 확인 (3초 대기 후)
+                time.sleep(3)
+                self.auto_log("1-2단계: 포지션 생성 확인 중...")
+
+                headers = {
+                    "accept": "application/json",
+                    "authorization": f"Bearer {self.access_token}",
+                    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "origin": "https://app.vdex.trade",
+                    "referer": "https://app.vdex.trade/"
+                }
+
+                try:
+                    response = requests.get(self.positions_url, headers=headers, impersonate="chrome120")
+                    data = response.json()
+
+                    if data.get("code") == 0:
+                        positions = data.get("data", [])
+                        if positions:
+                            self.auto_log(f"✓ 포지션 확인됨: {len(positions)}개")
+                        else:
+                            self.auto_log("⚠️ 포지션이 아직 생성되지 않았습니다")
+                    else:
+                        self.auto_log("⚠️ 포지션 조회 실패")
+                except Exception as e:
+                    self.auto_log(f"⚠️ 포지션 확인 오류: {str(e)}")
 
                 # 2. 대기
                 self.auto_log(f"2단계: {wait_time}초 대기 중...")
@@ -899,10 +872,8 @@ Issued At: {issued_at}"""
                 self.auto_status_label.config(text="대기 중", foreground="gray")
 
     def place_auto_order(self, symbol, direction, quantity_usd, leverage):
-        """자동 거래용 주문 함수 (팝업 없음)"""
         headers = {
             "accept": "application/json",
-            "accept-language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
             "authorization": f"Bearer {self.access_token}",
             "content-type": "application/json",
             "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -941,11 +912,8 @@ Issued At: {issued_at}"""
             return False
 
     def liquidate_auto(self):
-        """자동 거래용 청산 함수 (팝업 없음)"""
-        # 먼저 포지션 가져오기
         headers = {
             "accept": "application/json",
-            "accept-language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
             "authorization": f"Bearer {self.access_token}",
             "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "origin": "https://app.vdex.trade",
@@ -953,7 +921,6 @@ Issued At: {issued_at}"""
         }
 
         try:
-            # 포지션 조회
             response = requests.get(self.positions_url, headers=headers, impersonate="chrome120")
             data = response.json()
 
@@ -980,7 +947,6 @@ Issued At: {issued_at}"""
                 if not position_id or amount == 0:
                     continue
 
-                # 현재가 조회
                 try:
                     price_url = f"{self.price_url}/{token_id}/USDT"
                     price_response = requests.get(price_url, headers=headers, impersonate="chrome120")
